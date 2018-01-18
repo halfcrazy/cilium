@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -28,6 +29,7 @@ import (
 	"github.com/cilium/cilium/pkg/controller"
 	identityPkg "github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/k8s"
+	"github.com/cilium/cilium/pkg/kvstore"
 	"github.com/cilium/cilium/pkg/labels"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/metrics"
@@ -35,6 +37,7 @@ import (
 	"github.com/cilium/cilium/pkg/policy"
 	"github.com/cilium/cilium/pkg/policy/api"
 
+	"github.com/cilium/cilium/pkg/ipcache"
 	"github.com/sirupsen/logrus"
 )
 
@@ -879,9 +882,84 @@ func (e *Endpoint) runIdentityToK8sPodSync() {
 	)
 }
 
+// This synchronizes the key-value store with a mapping of the endpoint's IPv4
+// IP with the numerical ID representing its security identity.
+func (e *Endpoint) runIPv4IdentitySync() {
+	e.controllers.UpdateController(fmt.Sprintf("sync-ipv4-identity-mapping (%d)", e.ID),
+		controller.ControllerParams{
+			DoFunc: func() error {
+
+				e.Mutex.RLock()
+				ipKey := path.Join(ipcache.IPIdentitiesPath, ipcache.AddressSpace, e.IPv4.String())
+				if e.SecurityIdentity == nil {
+					e.Mutex.RUnlock()
+					return nil
+				}
+				identityValue := e.SecurityIdentity.ID.StringID()
+
+				// Release lock as we do not want to have long-lasting key-value
+				// store operations resulting in lock being held for a long time.
+				e.Mutex.RUnlock()
+				if err := kvstore.Update(ipKey, []byte(identityValue), true); err != nil {
+					return fmt.Errorf("unable to add endpoint IP '%s' to identity '%s': %s", ipKey, identityValue, err)
+				}
+				return nil
+			},
+			StopFunc: func() error {
+				e.Mutex.RLock()
+				ipKey := path.Join(ipcache.IPIdentitiesPath, ipcache.AddressSpace, e.IPv4.String())
+				e.Mutex.RUnlock()
+				if err := kvstore.Delete(ipKey); err != nil {
+					return fmt.Errorf("unable to delete endpoint IPv4 '%s': %s", ipKey, err)
+				}
+				return nil
+			},
+			RunInterval: 1 * time.Minute,
+		},
+	)
+}
+
+// This synchronizes the key-value store with a mapping of the endpoint's IPv6
+// IP with the numerical ID representing its security identity.
+func (e *Endpoint) runIPv6IdentitySync() {
+	e.controllers.UpdateController(fmt.Sprintf("sync-ipv6-identity-mapping (%d)", e.ID),
+		controller.ControllerParams{
+			DoFunc: func() error {
+
+				e.Mutex.RLock()
+				ipKey := path.Join(ipcache.IPIdentitiesPath, ipcache.AddressSpace, e.IPv6.String())
+				if e.SecurityIdentity == nil {
+					e.Mutex.RUnlock()
+					return nil
+				}
+				identityValue := e.SecurityIdentity.ID.StringID()
+
+				// Release lock as we do not want to have long-lasting key-value
+				// store operations resulting in lock being held for a long time.
+				e.Mutex.RUnlock()
+				if err := kvstore.Update(ipKey, []byte(identityValue), true); err != nil {
+					return fmt.Errorf("unable to add endpoint IPv6 '%s': %s", ipKey, err)
+				}
+				return nil
+			},
+			StopFunc: func() error {
+				e.Mutex.RLock()
+				ipKey := path.Join(ipcache.IPIdentitiesPath, ipcache.AddressSpace, e.IPv6.String())
+				e.Mutex.RUnlock()
+				if err := kvstore.Delete(ipKey); err != nil {
+					return fmt.Errorf("unable to delete endpoint IPv6 '%s': %s", ipKey, err)
+				}
+				return nil
+			},
+			RunInterval: 1 * time.Minute,
+		},
+	)
+}
+
 // SetIdentity resets endpoint's policy identity to 'id'.
 // Caller triggers policy regeneration if needed.
 // Called with e.Mutex Locked
+
 func (e *Endpoint) SetIdentity(owner Owner, identity *identityPkg.Identity) {
 	cache := policy.GetConsumableCache()
 
@@ -912,6 +990,14 @@ func (e *Endpoint) SetIdentity(owner Owner, identity *identityPkg.Identity) {
 	}
 
 	e.runIdentityToK8sPodSync()
+
+	// Whenever the identity is updated, propagate change to key-value store
+	// of IP to identity mapping.
+
+	if e.IPv4 != nil {
+		e.runIPv4IdentitySync()
+	}
+	e.runIPv6IdentitySync()
 
 	e.Consumable.Mutex.RLock()
 	e.getLogger().WithFields(logrus.Fields{
