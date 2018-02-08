@@ -570,9 +570,9 @@ func (e *Endpoint) regeneratePolicy(owner Owner, opts models.ConfigurationMap) (
 	// through. Some bpf/redirect updates are skipped in that case.
 	//
 	// This can be cleaned up once we shift all bpf updates to regenerateBPF().
-	if e.IngressPolicyMap == nil && !owner.DryModeEnabled() {
+	if (e.IngressPolicyMap == nil || e.EgressPolicyMap == nil) && !owner.DryModeEnabled() {
 		// First run always results in bpf generation
-		// L4 policy generation assumes e.PolicyMp to exist, but it is only created
+		// L4 policy generation assumes e.PolicyMap to exist, but it is only created
 		// when bpf is generated for the first time. Until then we can't really compute
 		// the policy. Bpf generation calls us again after IngressPolicyMap is created.
 		// In dry mode we are called with a nil IngressPolicyMap.
@@ -635,7 +635,7 @@ func (e *Endpoint) regeneratePolicy(owner Owner, opts models.ConfigurationMap) (
 
 	// Skip L4 policy recomputation for this consumable if already valid.
 	// Rest of the policy computation still needs to be done for each endpoint
-	// separately even thought the consumable may be shared between them.
+	// separately even though the consumable may be shared between them.
 	if c.Iteration != revision {
 		err = e.resolveL4Policy(owner, repo, c)
 		if err != nil {
@@ -690,6 +690,7 @@ func (e *Endpoint) regeneratePolicy(owner Owner, opts models.ConfigurationMap) (
 
 	optsChanged := e.applyOptsLocked(opts)
 
+	// Determines all security-identity based policy.
 	policyChanged2, consumersAdd, consumersRm := e.regenerateConsumable(owner, labelsMap, repo, c)
 	if policyChanged2 {
 		policyChanged = true
