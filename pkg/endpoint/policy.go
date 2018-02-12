@@ -572,10 +572,10 @@ func (e *Endpoint) regeneratePolicy(owner Owner, opts models.ConfigurationMap) (
 	// This can be cleaned up once we shift all bpf updates to regenerateBPF().
 	if (e.IngressPolicyMap == nil || e.EgressPolicyMap == nil) && !owner.DryModeEnabled() {
 		// First run always results in bpf generation
-		// L4 policy generation assumes e.PolicyMap to exist, but it is only created
+		// L4 policy generation assumes PolicyMaps exist, but they are only created
 		// when bpf is generated for the first time. Until then we can't really compute
-		// the policy. Bpf generation calls us again after IngressPolicyMap is created.
-		// In dry mode we are called with a nil IngressPolicyMap.
+		// the policy. Bpf generation calls us again after PolicyMaps are created.
+		// In dry mode we are called with nil PolicyMaps.
 
 		// We still need to apply any options if given.
 		if opts != nil {
