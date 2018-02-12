@@ -75,6 +75,14 @@ func (e *Endpoint) allowIngressIdentity(owner Owner, id identityPkg.NumericIdent
 	return e.Consumable.AllowIngressIdentityLocked(policy.GetConsumableCache(), id)
 }
 
+// allowEgressConsumer allows security identity id to be communicated to by
+// this endpoint by updating the endpoint's Consumable.
+// Must be called with global endpoint.Mutex held.
+func (e *Endpoint) allowEgressIdentity(owner Owner, id policy.NumericIdentity) bool {
+	cache := policy.GetConsumableCache()
+	return e.Consumable.AllowEgressIdentityLocked(cache, id)
+}
+
 // ProxyID returns a unique string to identify a proxy mapping
 func (e *Endpoint) ProxyID(l4 *policy.L4Filter) string {
 	direction := "ingress"
@@ -302,6 +310,11 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 		c.IngressIdentities[ingressIdentity] = false
 	}
 
+
+	for egressIdentity := range c.EgressIdentities {
+		c.EgressIdentities[egressIdentity] = false
+	}
+
 	rulesAdd = policy.NewSecurityIDContexts()
 	rulesRm = policy.NewSecurityIDContexts()
 
@@ -428,15 +441,17 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 			"labels":             labels,
 		}).Debugf("egress verdict: %v", egressAccess)
 
-		// TODO (ianvernon) plumb egress verdict into endpoint structure
 		if egressAccess == api.Allowed {
 			e.getLogger().WithFields(logrus.Fields{
 				logfields.PolicyID: identity,
 				"ctx":              ingressCtx}).Debug("egress allowed")
+			if e.allowEgressIdentity(owner, identity) {
+				changed = true
+			}
 		}
 	}
 
-	// Garbage collect all unused entries
+	// Garbage collect all unused entries for both ingress and egress.
 	for ingressIdentity, keepIdentity := range c.IngressIdentities {
 		if !keepIdentity {
 			c.RemoveIngressIdentityLocked(ingressIdentity)
@@ -462,6 +477,14 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 		}
 	}
 
+	for egressIdentity, keepIdentity := range c.EgressIdentities {
+		if !keepIdentity {
+			c.RemoveEgressIdentityLocked(egressIdentity)
+			changed = true
+			// TODO (ianvernon): conntrack work for egress.
+		}
+	}
+
 	if rulesAdd != nil {
 		rulesAddCpy := rulesAdd.DeepCopy() // Store the L3-L4 policy
 		c.L3L4Policy = &rulesAddCpy
@@ -470,6 +493,7 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 	e.getLogger().WithFields(logrus.Fields{
 		logfields.Identity:          c.ID,
 		"ingressSecurityIdentities": logfields.Repr(c.IngressIdentities),
+		"egressSecurityIdentities":  logfields.Repr(c.EgressIdentities),
 		"rulesAdd":                  rulesAdd,
 		"l4Rm":                      l4Rm,
 		"rulesRm":                   rulesRm,
