@@ -590,7 +590,7 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 				// Remove policy map file only if it was created
 				// in this update cycle
 				if c != nil {
-					c.RemoveMap(e.PolicyMap)
+					c.RemoveIngressMap(e.PolicyMap)
 				}
 
 				os.RemoveAll(e.PolicyMapPathLocked())
@@ -635,7 +635,7 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 	// Only generate & populate policy map if a security identity is set up for
 	// this endpoint.
 	if c != nil {
-		c.AddMap(e.PolicyMap)
+		c.AddIngressMap(e.PolicyMap)
 
 		// Regenerate policy and apply any options resulting in the
 		// policy change.
