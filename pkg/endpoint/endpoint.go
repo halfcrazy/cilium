@@ -279,13 +279,13 @@ type Endpoint struct {
 	// L4Policy is the L4Policy in effect for the
 	// endpoint. Normally, it is the same as the Consumable's
 	// L4Policy, but this is needed during policy recalculation to
-	// be able to clean up PolicyMap after the endpoint's consumable has already
+	// be able to clean up IngressPolicyMap after the endpoint's consumable has already
 	// been updated.
 	L4Policy *policy.L4Policy `json:"-"`
 
-	// PolicyMap is the policy related state of the datapath including
+	// IngressPolicyMap is the policy related state of the datapath including
 	// reference to all policy related BPF
-	PolicyMap *policymap.PolicyMap `json:"-"`
+	IngressPolicyMap *policymap.PolicyMap `json:"-"`
 
 	// CIDRPolicy is the CIDR based policy configuration of the endpoint. This
 	// is not contained within the Consumable for this endpoint because the
@@ -1289,8 +1289,8 @@ func (e *Endpoint) LeaveLocked(owner Owner) int {
 		c.Mutex.Unlock()
 	}
 
-	if e.PolicyMap != nil {
-		if err := e.PolicyMap.Close(); err != nil {
+	if e.IngressPolicyMap != nil {
+		if err := e.IngressPolicyMap.Close(); err != nil {
 			e.getLogger().WithError(err).WithField(logfields.Path, e.PolicyMapPathLocked()).Warn("Unable to close policy map")
 			errors++
 		}

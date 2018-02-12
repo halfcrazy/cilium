@@ -1151,7 +1151,7 @@ var _ = Describe("RuntimeValidatedPolicyImportTests", func() {
 		res.ExpectSuccess()
 	})
 
-	It("Check Endpoint PolicyMap Generation", func() {
+	It("Check Endpoint IngressPolicyMap Generation", func() {
 		endpointIDMap, err := vm.GetEndpointsIds()
 		Expect(err).Should(BeNil(), "Unable to get endpoint IDs")
 
@@ -1177,7 +1177,7 @@ var _ = Describe("RuntimeValidatedPolicyImportTests", func() {
 		policyMapsInVM := vm.Exec(fmt.Sprintf("find /sys/fs/bpf/tc/globals/cilium_policy* | grep -v reserved | grep -v %s", healthID))
 
 		By("Checking that all policy maps for endpoints have been deleted")
-		Expect(strings.TrimSpace(policyMapsInVM.GetStdOut())).To(Equal(expected), "Only %s PolicyMap should be present", expected)
+		Expect(strings.TrimSpace(policyMapsInVM.GetStdOut())).To(Equal(expected), "Only %s IngressPolicyMap should be present", expected)
 
 	})
 
