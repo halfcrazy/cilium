@@ -340,6 +340,26 @@ func (c *Consumable) AllowEgressIdentityLocked(cache *ConsumableCache, id identi
 			"consumable":       logfields.Repr(c),
 		}).Debug("New egress security identity for consumable")
 		c.addToEgressMaps(id)
+
+		// If id corresponds to a reserved identity, Consumable corresponding to
+		// that security identity needs to be updated explicitly, as reserved
+		// identities do not have a corresponding endpoint for which policy
+		// recalculation (when Consumables are updated) is done.
+		if id.IsReservedIdentity() {
+			reservedConsumable := cache.Lookup(id)
+			if reservedConsumable != nil {
+				// Avoid deadlock ; is this necessary? Being cautious.
+				if id != c.ID {
+					reservedConsumable.Mutex.Lock()
+					reservedConsumable.AllowEgressIdentityLocked(cache, c.ID)
+					reservedConsumable.Mutex.Unlock()
+				} else {
+					reservedConsumable.AllowEgressIdentityLocked(cache, c.ID)
+				}
+			} else {
+				log.WithField(logfields.Identity, id).Warningf("unable to allow egress to identity %d", c.ID)
+			}
+		}
 	}
 	c.EgressIdentities[id] = true
 	return !exists // not changed.
@@ -386,6 +406,25 @@ func (c *Consumable) RemoveEgressIdentityLocked(id identity.NumericIdentity) {
 	if _, ok := c.EgressIdentities[id]; ok {
 		log.WithField(logfields.Identity, id).Debug("Removing egress identity")
 		delete(c.EgressIdentities, id)
+
+		// Consumables corresponding to reserved identities need to be updated
+		// explicitly because they are not updated or regenerated.
+		if id.IsReservedIdentity() {
+			reservedConsumable := c.cache.Lookup(id)
+			if reservedConsumable != nil {
+				// Avoid deadlock!
+				if id != c.ID {
+					reservedConsumable.Mutex.Lock()
+					reservedConsumable.RemoveEgressIdentityLocked(c.ID)
+					reservedConsumable.Mutex.Unlock()
+				} else {
+					reservedConsumable.RemoveEgressIdentityLocked(c.ID)
+				}
+			} else {
+				log.WithField(logfields.Identity, id).Warningf("unable to disallow egress to identity %d", c.ID)
+			}
+
+		}
 
 		if c.wasLastRule(id) {
 			c.removeFromEgressMaps(id)
