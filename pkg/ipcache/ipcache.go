@@ -127,6 +127,15 @@ func (ipc *IPCache) LookupByIP(endpointIP string) (identity.NumericIdentity, boo
 	return identity, exists
 }
 
+// LookupByIdentity returns the set of endpoint IPs that have security identity
+// ID, as well as if the corresponding entry exists in the IPCache.
+func (ipc *IPCache) LookupByIdentity(id identity.NumericIdentity) (map[string]struct{}, bool) {
+	ipc.Mutex.RLock()
+	ips, exists := ipc.identityToIPCache[id]
+	ipc.Mutex.RUnlock()
+	return ips, exists
+}
+
 // IPIdentityMappingOwner is the interface the owner of an identity allocator
 // must implement
 type IPIdentityMappingOwner interface {
