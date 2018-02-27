@@ -131,7 +131,6 @@ func Init() {
 		}
 		GetConsumableCache().addReserved(c)
 
-		// TODO (ianvernon) - different map for egress???
-		c.AddIngressMap(policyMap)
+		c.AddMap(policyMap)
 	}
 }

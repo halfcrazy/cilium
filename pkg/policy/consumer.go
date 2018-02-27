@@ -24,6 +24,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type TrafficDirection uint8
+
+const (
+	Egress  TrafficDirection = 0
+	Ingress TrafficDirection = 1
+)
+
+// Uint8 normalizes the TrafficDirection for insertion into BPF maps.
+func (td TrafficDirection) Uint8() uint8 {
+	return uint8(td)
+}
+
 // Consumable holds all of the policies relevant to this security identity,
 // including label-based policies, L4Policy, and L7 policy. A Consumable is
 // shared amongst all endpoints on the same node which possess the same security
@@ -43,10 +55,10 @@ type Consumable struct {
 	// Iteration policy of the Consumable
 	Iteration uint64 `json:"-"`
 
-	// IngressMaps maps the file descriptor of the BPF PolicyMap in the BPF filesystem
+	// PolicyMaps maps the file descriptor of the BPF PolicyMap in the BPF filesystem
 	// to the golang representation of the same BPF PolicyPap. Each key-value
 	// pair corresponds to the BPF PolicyMap for a given endpoint.
-	IngressMaps map[int]*policymap.PolicyMap `json:"-"`
+	PolicyMaps map[int]*policymap.PolicyMap `json:"-"`
 
 	// IngressIdentities is the set of security identities from which ingress
 	// traffic is allowed. The value corresponds to whether the corresponding
@@ -78,9 +90,8 @@ func NewConsumable(id identity.NumericIdentity, lbls *identity.Identity, cache *
 		ID:                id,
 		Iteration:         0,
 		Labels:            lbls,
-		IngressMaps:       map[int]*policymap.PolicyMap{},
+		PolicyMaps:        map[int]*policymap.PolicyMap{},
 		IngressIdentities: map[identity.NumericIdentity]bool{},
-		EgressMaps:        map[int]*policymap.PolicyMap{},
 		EgressIdentities:  map[identity.NumericIdentity]bool{},
 		cache:             cache,
 	}
@@ -91,17 +102,17 @@ func NewConsumable(id identity.NumericIdentity, lbls *identity.Identity, cache *
 	return consumable
 }
 
-// AddIngressMap add m to the Consumable's IngressMaps. This represents
+// AddMap adds m to the Consumable's PolicyMaps. This represents
 // the PolicyMap being added for a specific endpoint.
-func (c *Consumable) AddIngressMap(m *policymap.PolicyMap) {
+func (c *Consumable) AddMap(m *policymap.PolicyMap) {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
-	if c.IngressMaps == nil {
-		c.IngressMaps = make(map[int]*policymap.PolicyMap)
+	if c.PolicyMaps == nil {
+		c.PolicyMaps = make(map[int]*policymap.PolicyMap)
 	}
 
 	// Check if map is already associated with this consumable
-	if _, ok := c.IngressMaps[m.Fd]; ok {
+	if _, ok := c.PolicyMaps[m.Fd]; ok {
 		return
 	}
 
@@ -109,59 +120,31 @@ func (c *Consumable) AddIngressMap(m *policymap.PolicyMap) {
 		"policymap":  m,
 		"consumable": c,
 	}).Debug("Adding policy map to consumable")
-	c.IngressMaps[m.Fd] = m
+	c.PolicyMaps[m.Fd] = m
 
 	// Populate the new map with the already established allowed identities from
 	// which ingress traffic is allowed.
 	for ingressIdentity := range c.IngressIdentities {
-		if err := m.AllowIdentity(ingressIdentity.Uint32()); err != nil {
+		if err := m.AllowIdentity(ingressIdentity.Uint32(), Ingress.Uint8()); err != nil {
+			log.WithError(err).Warn("Update of policy map failed")
+		}
+	}
+
+	for egressIdentity := range c.EgressIdentities {
+		if err := m.AllowIdentity(egressIdentity.Uint32(), Egress.Uint8()); err != nil {
 			log.WithError(err).Warn("Update of policy map failed")
 		}
 	}
 }
 
-// AddEgressMap adds m to the Consumable's EgressMaps. This represents
-// the PolicyMap being added for a specific endpoint.
-func (c *Consumable) AddEgressMap(m *policymap.PolicyMap) {
-	c.Mutex.Lock()
-	defer c.Mutex.Unlock()
-	if c.EgressMaps == nil {
-		c.EgressMaps = make(map[int]*policymap.PolicyMap)
-	}
-
-	// Check if map is already associated with this consumable
-	if _, ok := c.EgressMaps[m.Fd]; ok {
-		return
-	}
-
-	log.WithFields(logrus.Fields{
-		"policymap":  m,
-		"consumable": c,
-	}).Debug("Adding egress policy map to consumable")
-	c.EgressMaps[m.Fd] = m
-
-	// Populate the new map with the already established consumers of
-	// this consumable
-	for egressIdentity := range c.EgressIdentities {
-		if err := m.AllowIdentity(egressIdentity.Uint32()); err != nil {
-			log.WithError(err).Warn("Update of egress policy map failed")
-		}
-	}
-}
-
 func (c *Consumable) delete() {
+
 	for ingressIdentity := range c.IngressIdentities {
-		// FIXME: This explicit removal could be removed eventually to
-		// speed things up as the policy map should get deleted anyway
-		if c.wasLastRule(ingressIdentity) {
-			c.removeFromIngressMaps(ingressIdentity)
-		}
+		c.removeFromMaps(ingressIdentity, Ingress)
 	}
 
-	for egressIdentity := range c.IngressIdentities {
-		if c.wasLastRule(egressIdentity) {
-			c.removeFromEgressMaps(egressIdentity)
-		}
+	for egressIdentity := range c.EgressIdentities {
+		c.removeFromMaps(egressIdentity, Egress)
 	}
 
 	if c.cache != nil {
@@ -169,22 +152,22 @@ func (c *Consumable) delete() {
 	}
 }
 
-// RemoveIngressMap removes m from the Consumable's IngressMaps. This represents
+// RemovePolicyMap removes m from the Consumable's PolicyMaps. This represents
 // the PolicyMap being deleted for a specific endpoint.
-func (c *Consumable) RemoveIngressMap(m *policymap.PolicyMap) {
+func (c *Consumable) RemovePolicyMap(m *policymap.PolicyMap) {
 	if m != nil {
 		c.Mutex.Lock()
-		delete(c.IngressMaps, m.Fd)
+		delete(c.PolicyMaps, m.Fd)
 		log.WithFields(logrus.Fields{
 			"policymap":  m,
 			"consumable": c,
-			"count":      len(c.IngressMaps),
-		}).Debug("Removing map from consumable")
+			"count":      len(c.PolicyMaps),
+		}).Debug("Removing security identity map from consumable")
 
 		// If there are no more PolicyMaps for this Consumable, then the
 		// Consumable is no longer needed and should be removed from the cache,
 		// and all cross references must be undone.
-		if len(c.IngressMaps) == 0 && len(c.EgressMaps) == 0 {
+		if len(c.PolicyMaps) == 0 {
 			c.delete()
 		}
 		c.Mutex.Unlock()
@@ -192,32 +175,9 @@ func (c *Consumable) RemoveIngressMap(m *policymap.PolicyMap) {
 
 }
 
-// RemoveEgressMap removes m from the Consumable's EgressMaps. This represents
-// the PolicyMap being deleted for a specific endpoint.
-func (c *Consumable) RemoveEgressMap(m *policymap.PolicyMap) {
-	if m != nil {
-		c.Mutex.Lock()
-		delete(c.EgressMaps, m.Fd)
-		log.WithFields(logrus.Fields{
-			"policymap":  m,
-			"consumable": c,
-			"count":      len(c.IngressMaps),
-		}).Debug("Removing egress map from consumable")
-
-		// If there are no more PolicyMaps for this Consumable, then the
-		// Consumable is no longer needed and should be removed from the cache,
-		// and all cross references must be undone.
-		if len(c.IngressMaps) == 0 && len(c.EgressMaps) == 0 {
-			c.delete()
-		}
-		c.Mutex.Unlock()
-	}
-
-}
-
-func (c *Consumable) addToIngressMaps(id identity.NumericIdentity) {
-	for _, m := range c.IngressMaps {
-		if m.IdentityExists(id.Uint32()) {
+func (c *Consumable) addToPolicyMaps(id identity.NumericIdentity, trafficDirection TrafficDirection) {
+	for _, m := range c.PolicyMaps {
+		if m.IdentityExists(id.Uint32(), trafficDirection.Uint8()) {
 			continue
 		}
 
@@ -226,27 +186,10 @@ func (c *Consumable) addToIngressMaps(id identity.NumericIdentity) {
 			logfields.Identity: id,
 		})
 
-		scopedLog.Debug("Updating ingress policy BPF map: allowing Identity")
-		if err := m.AllowIdentity(id.Uint32()); err != nil {
+		// TODO (ianvernon) update direction based off of flag plumbing
+		scopedLog.Debug("Updating policy BPF map: allowing Identity")
+		if err := m.AllowIdentity(id.Uint32(), trafficDirection.Uint8()); err != nil {
 			scopedLog.WithError(err).Warn("Update of ingress policy map failed")
-		}
-	}
-}
-
-func (c *Consumable) addToEgressMaps(id identity.NumericIdentity) {
-	for _, m := range c.EgressMaps {
-		if m.IdentityExists(id.Uint32()) {
-			continue
-		}
-
-		scopedLog := log.WithFields(logrus.Fields{
-			"policymap":        m,
-			logfields.Identity: id,
-		})
-
-		scopedLog.Debug("Updating egress policy BPF map: allowing Identity")
-		if err := m.AllowIdentity(id.Uint32()); err != nil {
-			scopedLog.WithError(err).Warn("Update of egress policy map failed")
 		}
 	}
 }
@@ -259,29 +202,15 @@ func (c *Consumable) wasLastRule(id identity.NumericIdentity) bool {
 	return !existsIngressIdentity && !existsEgressIdentity
 }
 
-func (c *Consumable) removeFromIngressMaps(id identity.NumericIdentity) {
-	for _, m := range c.IngressMaps {
+func (c *Consumable) removeFromMaps(id identity.NumericIdentity, trafficDirection TrafficDirection) {
+	for _, m := range c.PolicyMaps {
 		scopedLog := log.WithFields(logrus.Fields{
 			"policymap":        m,
 			logfields.Identity: id,
 		})
 
 		scopedLog.Debug("Updating ingress policy BPF map: denying Identity")
-		if err := m.DeleteIdentity(id.Uint32()); err != nil {
-			scopedLog.WithError(err).Warn("Update of policy map failed")
-		}
-	}
-}
-
-func (c *Consumable) removeFromEgressMaps(id identity.NumericIdentity) {
-	for _, m := range c.EgressMaps {
-		scopedLog := log.WithFields(logrus.Fields{
-			"policymap":        m,
-			logfields.Identity: id,
-		})
-
-		scopedLog.Debug("Updating egress policy BPF map: denying Identity")
-		if err := m.DeleteIdentity(id.Uint32()); err != nil {
+		if err := m.DeleteIdentity(id.Uint32(), trafficDirection.Uint8()); err != nil {
 			scopedLog.WithError(err).Warn("Update of policy map failed")
 		}
 	}
@@ -298,7 +227,7 @@ func (c *Consumable) AllowIngressIdentityLocked(cache *ConsumableCache, id ident
 			logfields.Identity: id,
 			"consumable":       logfields.Repr(c),
 		}).Debug("Allowing security identity on ingress for consumable")
-		c.addToIngressMaps(id)
+		c.addToPolicyMaps(id, Ingress)
 
 		// If id corresponds to a reserved identity, Consumable corresponding to
 		// that security identity needs to be updated explicitly, as reserved
@@ -339,7 +268,7 @@ func (c *Consumable) AllowEgressIdentityLocked(cache *ConsumableCache, id identi
 			logfields.Identity: id,
 			"consumable":       logfields.Repr(c),
 		}).Debug("New egress security identity for consumable")
-		c.addToEgressMaps(id)
+		c.addToPolicyMaps(id, Egress)
 
 		// If id corresponds to a reserved identity, Consumable corresponding to
 		// that security identity needs to be updated explicitly, as reserved
@@ -393,9 +322,7 @@ func (c *Consumable) RemoveIngressIdentityLocked(id identity.NumericIdentity) {
 			}
 
 		}
-		if c.wasLastRule(id) {
-			c.removeFromIngressMaps(id)
-		}
+		c.removeFromMaps(id, Ingress)
 	}
 }
 
@@ -426,13 +353,11 @@ func (c *Consumable) RemoveEgressIdentityLocked(id identity.NumericIdentity) {
 
 		}
 
-		if c.wasLastRule(id) {
-			c.removeFromEgressMaps(id)
-		}
+		c.removeFromMaps(id, Ingress)
 	}
 }
 
-func (c *Consumable) Allows(id identity.NumericIdentity) bool {
+func (c *Consumable) AllowsIngress(id identity.NumericIdentity) bool {
 	c.Mutex.RLock()
 	isIdentityAllowed, _ := c.IngressIdentities[id]
 	c.Mutex.RUnlock()

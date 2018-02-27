@@ -124,7 +124,7 @@ func (e *Endpoint) removeOldFilter(owner Owner, labelsMap *identityPkg.IdentityC
 			if _, ok := fromEndpointsSrcIDs[id]; !ok {
 				fromEndpointsSrcIDs[id] = policy.NewL4RuleContexts()
 			}
-			if err := e.IngressPolicyMap.DeleteL4(srcID, port, proto); err != nil {
+			if err := e.SecurityIdentityMap.DeleteL4(srcID, port, proto, policy.Ingress.Uint8()); err != nil {
 				// This happens when the policy would add
 				// multiple copies of the same L4 policy. Only
 				// one of them is actually added, but we'll
@@ -167,7 +167,7 @@ func (e *Endpoint) applyNewFilter(owner Owner, labelsMap *identityPkg.IdentityCa
 	for _, sel := range filter.FromEndpoints {
 		for _, id := range getSecurityIdentities(labelsMap, &sel) {
 			srcID := id.Uint32()
-			if e.IngressPolicyMap.L4Exists(srcID, port, proto) {
+			if e.SecurityIdentityMap.L4Exists(srcID, port, proto, policy.Ingress.Uint8()) {
 				e.getLogger().WithField("l4Filter", filter).Debug("L4 filter exists")
 				continue
 			}
@@ -175,7 +175,7 @@ func (e *Endpoint) applyNewFilter(owner Owner, labelsMap *identityPkg.IdentityCa
 			if _, ok := fromEndpointsSrcIDs[id]; !ok {
 				fromEndpointsSrcIDs[id] = policy.NewL4RuleContexts()
 			}
-			if err := e.IngressPolicyMap.AllowL4(srcID, port, proto); err != nil {
+			if err := e.SecurityIdentityMap.AllowL4(srcID, port, proto, policy.Ingress.Uint8()); err != nil {
 				e.getLogger().WithFields(logrus.Fields{
 					logfields.PolicyID: srcID,
 					logfields.Port:     port,
@@ -213,7 +213,7 @@ func setMapOperationResult(secIDs, newSecIDs policy.SecurityIDContexts) {
 }
 
 // Looks for mismatches between 'oldPolicy' and 'newPolicy', and fixes up
-// this Endpoint's BPF IngressPolicyMap to reflect the new L3+L4 combined policy.
+// this Endpoint's BPF SecurityIdentityMap to reflect the new L3+L4 combined policy.
 // Returns a map that represents all L3-dependent L4 rules that were attempted
 // to be added;
 // and a map that represents all L3-dependent L4 rules that were attempted
@@ -329,7 +329,7 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 	} else {
 		changed = true
 
-		// IngressPolicyMap can't be created in dry mode.
+		// SecurityIdentityMap can't be created in dry mode.
 		if !owner.DryModeEnabled() {
 			// Collect unused redirects.
 			rulesAdd, l4Rm, err = e.applyL4PolicyLocked(owner, labelsMap, e.L4Policy, c.L4Policy)
@@ -569,7 +569,7 @@ func (e *Endpoint) regeneratePolicy(owner Owner, opts models.ConfigurationMap) (
 	// through. Some bpf/redirect updates are skipped in that case.
 	//
 	// This can be cleaned up once we shift all bpf updates to regenerateBPF().
-	if (e.IngressPolicyMap == nil || e.EgressPolicyMap == nil) && !owner.DryModeEnabled() {
+	if e.SecurityIdentityMap == nil && !owner.DryModeEnabled() {
 		// First run always results in bpf generation
 		// L4 policy generation assumes PolicyMaps exist, but they are only created
 		// when bpf is generated for the first time. Until then we can't really compute

@@ -73,7 +73,7 @@ func EnableLogstash(LogstashAddr string, refreshTime int) {
 			eps := endpointmanager.GetEndpoints()
 			for _, ep := range eps {
 				ep.Mutex.RLock()
-				pes, err := ep.IngressPolicyMap.DumpToSlice()
+				pes, err := ep.SecurityIdentityMap.DumpToSlice()
 				if err != nil {
 					ep.Mutex.RUnlock()
 					continue

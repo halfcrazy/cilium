@@ -279,17 +279,13 @@ type Endpoint struct {
 	// L4Policy is the L4Policy in effect for the
 	// endpoint. Normally, it is the same as the Consumable's
 	// L4Policy, but this is needed during policy recalculation to
-	// be able to clean up IngressPolicyMap after the endpoint's consumable has already
+	// be able to clean up SecurityIdentityMap after the endpoint's consumable has already
 	// been updated.
 	L4Policy *policy.L4Policy `json:"-"`
 
-	// IngressPolicyMap is the policy related state of the datapath including
+	// SecurityIdentityMap is the policy related state of the datapath including
 	// reference to all policy related BPF
-	IngressPolicyMap *policymap.PolicyMap `json:"-"`
-
-	// EgressPolicyMap is the egress policy related state of the datapath
-	// including reference to all policy related BPF.
-	EgressPolicyMap *policymap.PolicyMap `json:"-"`
+	SecurityIdentityMap *policymap.PolicyMap `json:"-"`
 
 	// CIDRPolicy is the CIDR based policy configuration of the endpoint. This
 	// is not contained within the Consumable for this endpoint because the
@@ -851,7 +847,7 @@ func (e *Endpoint) Allows(id identityPkg.NumericIdentity) bool {
 	e.Mutex.RLock()
 	defer e.Mutex.RUnlock()
 	if e.Consumable != nil {
-		return e.Consumable.Allows(id)
+		return e.Consumable.AllowsIngress(id)
 	}
 	return false
 }
@@ -1006,7 +1002,8 @@ func (e *Endpoint) RemoveFromGlobalPolicyMap() error {
 	if err == nil {
 		// We need to remove ourselves from global map, so that
 		// resources (prog/map reference counts) can be released.
-		gpm.DeleteIdentity(uint32(e.ID))
+		gpm.DeleteIdentity(uint32(e.ID), policy.Ingress.Uint8())
+		gpm.DeleteIdentity(uint32(e.ID), policy.Egress.Uint8())
 		gpm.Close()
 	}
 
@@ -1065,14 +1062,9 @@ func mapPath(mapname string, id int) string {
 	return bpf.MapPath(mapname + strconv.Itoa(id))
 }
 
-// IngressPolicyMapPathLocked returns the path to the ingress policy map of endpoint.
-func (e *Endpoint) IngressPolicyMapPathLocked() string {
-	return mapPath(policymap.MapName+"ingress_", int(e.ID))
-}
-
-// EgressPolicyMapPathLocked returns the path to the egress policy map of endpoint.
-func (e *Endpoint) EgressPolicyMapPathLocked() string {
-	return mapPath(policymap.MapName+"egress_", int(e.ID))
+// PolicyMapPathLocked returns the path to the ingress policy map of endpoint.
+func (e *Endpoint) PolicyMapPathLocked() string {
+	return mapPath(policymap.MapName, int(e.ID))
 }
 
 // IPv6IngressMapPathLocked returns the path to policy map of endpoint.
@@ -1298,16 +1290,9 @@ func (e *Endpoint) LeaveLocked(owner Owner) int {
 		c.Mutex.Unlock()
 	}
 
-	if e.IngressPolicyMap != nil {
-		if err := e.IngressPolicyMap.Close(); err != nil {
-			e.getLogger().WithError(err).WithField(logfields.Path, e.IngressPolicyMapPathLocked()).Warn("Unable to close policy map")
-			errors++
-		}
-	}
-
-	if e.EgressPolicyMap != nil {
-		if err := e.EgressPolicyMap.Close(); err != nil {
-			e.getLogger().WithError(err).WithField(logfields.Path, e.EgressPolicyMapPathLocked()).Warn("Unable to close policy map")
+	if e.SecurityIdentityMap != nil {
+		if err := e.SecurityIdentityMap.Close(); err != nil {
+			e.getLogger().WithError(err).WithField(logfields.Path, e.PolicyMapPathLocked()).Warn("Unable to close policy map")
 			errors++
 		}
 	}
