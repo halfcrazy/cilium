@@ -78,7 +78,7 @@ func (e *Endpoint) allowIngressIdentity(owner Owner, id identityPkg.NumericIdent
 // allowEgressConsumer allows security identity id to be communicated to by
 // this endpoint by updating the endpoint's Consumable.
 // Must be called with global endpoint.Mutex held.
-func (e *Endpoint) allowEgressIdentity(owner Owner, id policy.NumericIdentity) bool {
+func (e *Endpoint) allowEgressIdentity(owner Owner, id identityPkg.NumericIdentity) bool {
 	cache := policy.GetConsumableCache()
 	return e.Consumable.AllowEgressIdentityLocked(cache, id)
 }
@@ -309,7 +309,6 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 		// Mark as false indicates denying
 		c.IngressIdentities[ingressIdentity] = false
 	}
-
 
 	for egressIdentity := range c.EgressIdentities {
 		c.EgressIdentities[egressIdentity] = false
