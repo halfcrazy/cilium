@@ -149,6 +149,8 @@ func GetIPIdentityMapModel() {
 }
 
 func ipIdentityWatcher(owner IPIdentityMappingOwner) {
+
+watch:
 	watcher := kvstore.ListAndWatch("endpointIPWatcher", IPIdentitiesPath, 512)
 	for {
 		var (
@@ -157,7 +159,14 @@ func ipIdentityWatcher(owner IPIdentityMappingOwner) {
 		)
 
 		// Get events from channel as they come in.
-		event := <-watcher.Events
+		event, ok := <-watcher.Events
+
+		// If for whatever reason channel is closed for watcher, try to list and
+		// watch again.
+		if !ok {
+			log.Debugf("%s closed, restarting watch", watcher.String())
+			goto watch
+		}
 
 		_ = json.Unmarshal(event.Value, &identity)
 
