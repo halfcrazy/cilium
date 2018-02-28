@@ -56,7 +56,7 @@ var (
 // IPCache is a caching of endpoint IP to security identity (and vice-versa) for
 // all endpoints which are part of the same cluster.
 type IPCache struct {
-	Mutex              lock.RWMutex
+	mutex              lock.RWMutex
 	ipToIdentityCache  map[string]identity.NumericIdentity
 	identityToIPCache  map[identity.NumericIdentity]map[string]struct{}
 	xdsResourceMutator xds.ResourceMutator
@@ -75,8 +75,8 @@ func NewIPCache(resourceMutator xds.ResourceMutator) *IPCache {
 // Upsert adds / updates  the provided IP and identity into both caches contained
 // within ipc.
 func (ipc *IPCache) Upsert(endpointIP string, identity identity.NumericIdentity) {
-	ipc.Mutex.Lock()
-	defer ipc.Mutex.Unlock()
+	ipc.mutex.Lock()
+	defer ipc.mutex.Unlock()
 
 	// Update both maps.
 	ipc.ipToIdentityCache[endpointIP] = identity
@@ -101,8 +101,8 @@ func (ipc *IPCache) Upsert(endpointIP string, identity identity.NumericIdentity)
 // Delete removes the provided IP-to-security-identity mapping from both caches
 // within ipc.
 func (ipc *IPCache) Delete(endpointIP string) {
-	ipc.Mutex.Lock()
-	defer ipc.Mutex.Unlock()
+	ipc.mutex.Lock()
+	defer ipc.mutex.Unlock()
 	identity, found := ipc.ipToIdentityCache[endpointIP]
 	if found {
 		delete(ipc.ipToIdentityCache, endpointIP)
@@ -121,18 +121,18 @@ func (ipc *IPCache) Delete(endpointIP string) {
 // to within the provided IPCache, as well as if the corresponding entry exists
 // in the IPCache.
 func (ipc *IPCache) LookupByIP(endpointIP string) (identity.NumericIdentity, bool) {
-	ipc.Mutex.RLock()
+	ipc.mutex.RLock()
 	identity, exists := ipc.ipToIdentityCache[endpointIP]
-	ipc.Mutex.RUnlock()
+	ipc.mutex.RUnlock()
 	return identity, exists
 }
 
 // LookupByIdentity returns the set of endpoint IPs that have security identity
 // ID, as well as if the corresponding entry exists in the IPCache.
 func (ipc *IPCache) LookupByIdentity(id identity.NumericIdentity) (map[string]struct{}, bool) {
-	ipc.Mutex.RLock()
+	ipc.mutex.RLock()
 	ips, exists := ipc.identityToIPCache[id]
-	ipc.Mutex.RUnlock()
+	ipc.mutex.RUnlock()
 	return ips, exists
 }
 
