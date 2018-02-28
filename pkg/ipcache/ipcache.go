@@ -106,12 +106,9 @@ func (ipc *IPCache) Delete(endpointIP string) {
 	identity, found := ipc.ipToIdentityCache[endpointIP]
 	if found {
 		delete(ipc.ipToIdentityCache, endpointIP)
-		// avoid deletion from nil map
-		if _, found2 := ipc.identityToIPCache[identity]; found2 {
-			delete(ipc.identityToIPCache[identity], endpointIP)
-			if len(ipc.identityToIPCache[identity]) == 0 {
-				delete(ipc.identityToIPCache, identity)
-			}
+		delete(ipc.identityToIPCache[identity], endpointIP)
+		if len(ipc.identityToIPCache[identity]) == 0 {
+			delete(ipc.identityToIPCache, identity)
 		}
 		ipc.xdsResourceMutator.Delete(envoy.NetworkPolicyHostsTypeURL, identity.StringID(), false)
 	}
