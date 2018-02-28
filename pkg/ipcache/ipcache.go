@@ -145,6 +145,7 @@ type IPIdentityMappingOwner interface {
 // stored in the key-value store.
 func GetIPIdentityMapModel() {
 	// TODO (ianvernon) return model of ip to identity mapping. For use in CLI.
+	// see GH-2555
 }
 
 func ipIdentityWatcher(owner IPIdentityMappingOwner) {
