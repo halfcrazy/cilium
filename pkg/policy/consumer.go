@@ -36,6 +36,16 @@ func (td TrafficDirection) Uint8() uint8 {
 	return uint8(td)
 }
 
+func (td TrafficDirection) String() string {
+	if td == Egress {
+		return "Egress"
+	} else if td == Ingress {
+		return "Ingress"
+	}
+
+	return "Unknown"
+}
+
 // Consumable holds all of the policies relevant to this security identity,
 // including label-based policies, L4Policy, and L7 policy. A Consumable is
 // shared amongst all endpoints on the same node which possess the same security
