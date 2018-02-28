@@ -959,7 +959,6 @@ func (e *Endpoint) runIPv6IdentitySync() {
 // SetIdentity resets endpoint's policy identity to 'id'.
 // Caller triggers policy regeneration if needed.
 // Called with e.Mutex Locked
-
 func (e *Endpoint) SetIdentity(owner Owner, identity *identityPkg.Identity) {
 	cache := policy.GetConsumableCache()
 
