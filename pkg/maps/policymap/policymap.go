@@ -113,7 +113,7 @@ func (pm *PolicyMap) IdentityExists(id uint32, trafficDirection uint8) bool {
 // allows source identity `id` send traffic with destination port `dport` over
 // protocol `proto`.
 func (pm *PolicyMap) L4Exists(id uint32, dport uint16, proto uint8, trafficDirection uint8) bool {
-	key := policyKey{Identity: id, DestPort: byteorder.HostToNetwork(dport).(uint16), Nexthdr: proto}
+	key := policyKey{Identity: id, DestPort: byteorder.HostToNetwork(dport).(uint16), Nexthdr: proto, TrafficDirection: trafficDirection}
 	var entry PolicyEntry
 	return bpf.LookupElement(pm.Fd, unsafe.Pointer(&key), unsafe.Pointer(&entry)) == nil
 }
