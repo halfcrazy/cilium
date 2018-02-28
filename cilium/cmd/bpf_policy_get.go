@@ -31,6 +31,7 @@ import (
 	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/u8proto"
 
+	"github.com/cilium/cilium/pkg/policy"
 	"github.com/spf13/cobra"
 )
 
@@ -93,12 +94,13 @@ func listMap(cmd *cobra.Command, args []string) {
 
 func formatMap(w io.Writer, statsMap []policymap.PolicyEntryDump) {
 	const (
-		labelsIDTitle  = "IDENTITY"
-		labelsDesTitle = "LABELS (source:key[=value])"
-		portTitle      = "PORT/PROTO"
-		actionTitle    = "ACTION"
-		bytesTitle     = "BYTES"
-		packetsTitle   = "PACKETS"
+		trafficDirectionTitle = "DIRECTION"
+		labelsIDTitle         = "IDENTITY"
+		labelsDesTitle        = "LABELS (source:key[=value])"
+		portTitle             = "PORT/PROTO"
+		actionTitle           = "ACTION"
+		bytesTitle            = "BYTES"
+		packetsTitle          = "PACKETS"
 	)
 
 	labelsID := map[identity.NumericIdentity]*identity.Identity{}
@@ -116,12 +118,14 @@ func formatMap(w io.Writer, statsMap []policymap.PolicyEntryDump) {
 	}
 
 	if printIDs {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t\n", labelsIDTitle, portTitle, actionTitle, bytesTitle, packetsTitle)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t\n", trafficDirectionTitle, labelsIDTitle, portTitle, actionTitle, bytesTitle, packetsTitle)
 	} else {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t\n", labelsDesTitle, portTitle, actionTitle, bytesTitle, packetsTitle)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t\n", trafficDirectionTitle, labelsDesTitle, portTitle, actionTitle, bytesTitle, packetsTitle)
 	}
 	for _, stat := range statsMap {
 		id := identity.NumericIdentity(stat.Key.Identity)
+		trafficDirection := policy.TrafficDirection(stat.Key.TrafficDirection)
+		trafficDirectionString := trafficDirection.String()
 		port := models.PortProtocolANY
 		if stat.Key.DestPort != 0 {
 			dport := byteorder.NetworkToHost(stat.Key.DestPort).(uint16)
@@ -130,19 +134,19 @@ func formatMap(w io.Writer, statsMap []policymap.PolicyEntryDump) {
 		}
 		act := api.Decision(stat.Action)
 		if printIDs {
-			fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%d\t\n", id, port, act.String(), stat.Bytes, stat.Packets)
+			fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%d\t%d\t\n", trafficDirectionString, id, port, act.String(), stat.Bytes, stat.Packets)
 		} else if lbls := labelsID[id]; lbls != nil {
 			first := true
 			for _, lbl := range lbls.Labels {
 				if first {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t\n", lbl, port, act.String(), stat.Bytes, stat.Packets)
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t\n", trafficDirectionString, lbl, port, act.String(), stat.Bytes, stat.Packets)
 					first = false
 				} else {
-					fmt.Fprintf(w, "%s\t\t\t\t\t\n", lbl)
+					fmt.Fprintf(w, "\t%s\t\t\t\t\t\n", lbl)
 				}
 			}
 		} else {
-			fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%d\t\n", id, port, act.String(), stat.Bytes, stat.Packets)
+			fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%d\t%d\t\n", trafficDirectionString, id, port, act.String(), stat.Bytes, stat.Packets)
 		}
 	}
 }
