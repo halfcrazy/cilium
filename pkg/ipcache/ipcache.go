@@ -76,7 +76,7 @@ func NewIPCache(resourceMutator xds.ResourceMutator) *IPCache {
 // within ipc.
 func (ipc *IPCache) Upsert(endpointIP string, identity identity.NumericIdentity) {
 	ipc.mutex.Lock()
-	defer ipc.mutex.Unlock()
+	log.Debugf("ipcache.Upsert: locking ipcache")
 
 	// Update both maps.
 	ipc.ipToIdentityCache[endpointIP] = identity
@@ -94,6 +94,8 @@ func (ipc *IPCache) Upsert(endpointIP string, identity identity.NumericIdentity)
 		ipStrings = append(ipStrings, endpointIP)
 	}
 	sort.Strings(ipStrings)
+	log.Debugf("ipcache.Upsert: unlocking ipcache")
+	ipc.mutex.Unlock()
 	ipc.xdsResourceMutator.Upsert(envoy.NetworkPolicyHostsTypeURL, identity.StringID(), &envoyAPI.NetworkPolicyHosts{Policy: uint64(identity), HostAddresses: ipStrings}, false)
 
 }
@@ -102,7 +104,8 @@ func (ipc *IPCache) Upsert(endpointIP string, identity identity.NumericIdentity)
 // within ipc.
 func (ipc *IPCache) Delete(endpointIP string) {
 	ipc.mutex.Lock()
-	defer ipc.mutex.Unlock()
+	log.Debugf("ipcache.Delete: locking ipcache")
+
 	identity, found := ipc.ipToIdentityCache[endpointIP]
 	if found {
 		delete(ipc.ipToIdentityCache, endpointIP)
@@ -110,7 +113,12 @@ func (ipc *IPCache) Delete(endpointIP string) {
 		if len(ipc.identityToIPCache[identity]) == 0 {
 			delete(ipc.identityToIPCache, identity)
 		}
+		log.Debugf("ipcache.Delete: unlocking ipcache before resource mutator delete")
+		ipc.mutex.Unlock()
 		ipc.xdsResourceMutator.Delete(envoy.NetworkPolicyHostsTypeURL, identity.StringID(), false)
+	} else {
+		log.Debugf("ipcache.Delete: unlocking ipcache without resource mutator delete")
+		ipc.mutex.Unlock()
 	}
 }
 
@@ -119,7 +127,9 @@ func (ipc *IPCache) Delete(endpointIP string) {
 // in the IPCache.
 func (ipc *IPCache) LookupByIP(endpointIP string) (identity.NumericIdentity, bool) {
 	ipc.mutex.RLock()
+	log.Debugf("ipcache.LookupByIP: RLocking ipcache")
 	identity, exists := ipc.ipToIdentityCache[endpointIP]
+	log.Debugf("ipcache.LookupByIP: RUnlocking ipcache")
 	ipc.mutex.RUnlock()
 	return identity, exists
 }
@@ -128,7 +138,9 @@ func (ipc *IPCache) LookupByIP(endpointIP string) (identity.NumericIdentity, boo
 // ID, as well as if the corresponding entry exists in the IPCache.
 func (ipc *IPCache) LookupByIdentity(id identity.NumericIdentity) (map[string]struct{}, bool) {
 	ipc.mutex.RLock()
+	log.Debugf("ipcache.LookupByIdentity: RLocking ipcache")
 	ips, exists := ipc.identityToIPCache[id]
+	log.Debugf("ipcache.LookupByIdentity: RUnlocking ipcache")
 	ipc.mutex.RUnlock()
 	return ips, exists
 }
@@ -160,6 +172,8 @@ watch:
 
 		// Get events from channel as they come in.
 		event, ok := <-watcher.Events
+
+		log.Debugf("ipIdentityWatcher: received event")
 
 		// If for whatever reason channel is closed for watcher, try to list and
 		// watch again.
