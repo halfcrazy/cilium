@@ -20,7 +20,7 @@ GOBUILD = -ldflags '-X "github.com/cilium/cilium/pkg/version.Version=$(BUILD)"'
 #GOBUILD += -race
 
 # Uncomment to enable deadlock detection
-#GOBUILD += -tags lockdebug
+GOBUILD += -tags lockdebug
 
 ifneq ($(LOCKDEBUG),)
     GOBUILD += -tags lockdebug
