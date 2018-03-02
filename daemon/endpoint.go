@@ -409,7 +409,7 @@ func (d *Daemon) DeleteEndpoint(id string) (int, error) {
 	if ep, err := endpointmanager.Lookup(id); err != nil {
 		return 0, apierror.Error(DeleteEndpointIDInvalidCode, err)
 	} else if ep == nil {
-		return 0, apierror.New(DeleteEndpointIDNotFoundCode, "endpoint not found")
+		return 0, apierror.New(DeleteEndpointIDNotFoundCode, "endpoint %s not found", id)
 	} else if err = endpoint.APICanModify(ep); err != nil {
 		return 0, apierror.Error(DeleteEndpointIDInvalidCode, err)
 	} else {

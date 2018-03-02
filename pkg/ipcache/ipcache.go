@@ -97,7 +97,6 @@ func (ipc *IPCache) Upsert(endpointIP string, identity identity.NumericIdentity)
 	log.Debugf("ipcache.Upsert: unlocking ipcache")
 	ipc.mutex.Unlock()
 	ipc.xdsResourceMutator.Upsert(envoy.NetworkPolicyHostsTypeURL, identity.StringID(), &envoyAPI.NetworkPolicyHosts{Policy: uint64(identity), HostAddresses: ipStrings}, false)
-
 }
 
 // Delete removes the provided IP-to-security-identity mapping from both caches

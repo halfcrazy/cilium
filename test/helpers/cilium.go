@@ -541,7 +541,8 @@ func (s *SSHMeta) CheckLogsForDeadlock() {
 func (s *SSHMeta) ReportDump() {
 
 	reportEndpointsCommands := map[string]string{
-		"cilium endpoint get %s":        "endpoint_%s.txt",
+		"cilium endpoint get %s":        "endpoint_get_%s.txt",
+		"cilium endpoint log %s":        "endpoint_log_%s.txt",
 		"sudo cilium bpf policy get %s": "bpf_policy_get_%s.txt",
 	}
 

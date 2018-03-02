@@ -63,6 +63,7 @@ func identityWatcher(owner IdentityAllocatorOwner) {
 
 		switch event.Typ {
 		case kvstore.EventTypeCreate, kvstore.EventTypeDelete:
+			log.Debugf("Triggering policy updates due to new identity watcher event %s", event.Typ)
 			owner.TriggerPolicyUpdates(true)
 
 		case kvstore.EventTypeModify:
